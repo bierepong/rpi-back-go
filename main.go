@@ -72,12 +72,18 @@ func main() {
 		"mock":       mock,
 	}).Info("current configuration")
 
+	// Test database connection
+	getDbClient()
+	// Close on exit
+	defer getDbClient().Close()
+
 	// Init buffer data variables
 	buf := make([]byte, 128)
 	var stringList []string
 
 	// Handle mock mode
 	if mock {
+		dbTest()
 		handleMocks(buf, stringList)
 		return
 	}

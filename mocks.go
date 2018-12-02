@@ -48,6 +48,15 @@ var expectedValues = [][]int{
 	{15, 2, 5, 85, 9, 4},
 }
 
+var dbUsernamesMock = []string{
+	"user1",
+	"foo",
+	"bar",
+	"hello",
+	"world",
+	"test",
+}
+
 func handleMocks(buf []byte, stringList []string) {
 	log.Warn("app is in mock mode")
 	for _, stringMock := range mocks {
@@ -63,4 +72,14 @@ func handleMocks(buf []byte, stringList []string) {
 
 	log.WithField("expectedValues", expectedValues).Info("expected mock values")
 	log.WithField("globalCurrentSensorValues", globalCurrentSensorValues).Info("last mock value")
+}
+
+func dbTest() {
+	for _, user := range dbUsernamesMock {
+		username, errInsertUser := getDbClient().insertUser(user)
+		if errInsertUser != nil {
+			log.WithError(errInsertUser).Error("error on user insertion")
+		}
+		log.WithField("username", username).Info("user insertion")
+	}
 }
