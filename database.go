@@ -27,6 +27,8 @@ func getDbClient() *GameDB {
 		dbPath = "./test_db.sqlite"
 	}
 
+	log.WithField("dbPath", dbPath).Info("database selected")
+
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 		vanillaDB, errOpen := sql.Open("sqlite3", dbPath)
 		if errOpen != nil {

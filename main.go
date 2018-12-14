@@ -2,11 +2,15 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/gin-contrib/static"
+	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 	"github.com/tarm/serial"
 )
@@ -38,6 +42,8 @@ func main() {
 	baudRateRaw := os.Getenv("BEERPONG_BAUD_RATE")
 	publicHtml := os.Getenv("BEERPONG_PUBLIC_HTML")
 	mockRaw := os.Getenv("BEERPONG_MOCK")
+	productionRaw := os.Getenv("BEERPONG_PRODUCTION")
+	listenPort := os.Getenv("BEERPONG_LISTEN_PORT")
 
 	// Get default values
 	if usbPort == "" {
@@ -52,6 +58,12 @@ func main() {
 	if mockRaw == "" {
 		mockRaw = "false"
 	}
+	if productionRaw == "" {
+		productionRaw = "false"
+	}
+	if listenPort == "" {
+		listenPort = "8080"
+	}
 
 	// Parse raw values
 	baudRate, errAtoi := strconv.Atoi(baudRateRaw)
@@ -62,6 +74,10 @@ func main() {
 	if errParseBool != nil {
 		log.WithError(errParseBool).Fatal("error parsing mock value")
 	}
+	production, errParseBool := strconv.ParseBool(productionRaw)
+	if errParseBool != nil {
+		log.WithError(errParseBool).Fatal("error parsing production value")
+	}
 
 	// Print configuration info
 	log.WithFields(log.Fields{
@@ -70,7 +86,14 @@ func main() {
 		"baudRate":   baudRate,
 		"publicHtml": publicHtml,
 		"mock":       mock,
+		"production": production,
+		"listenPort": listenPort,
 	}).Info("current configuration")
+
+	// Configure Gin release mode
+	if production {
+		gin.SetMode(gin.ReleaseMode)
+	}
 
 	// Test database connection
 	getDbClient()
@@ -88,6 +111,22 @@ func main() {
 		return
 	}
 
+	// Init Web server/API
+	router := gin.Default()
+	router.Use(static.Serve("/", static.LocalFile(publicHtml, true)))
+
+	router.GET("/version", func(ctx *gin.Context) {
+		ctx.JSON(http.StatusOK, gin.H{"version": version})
+	})
+
+	httpServer := &http.Server{
+		Addr:           ":" + listenPort,
+		Handler:        router,
+		ReadTimeout:    30 * time.Second,
+		WriteTimeout:   30 * time.Second,
+		MaxHeaderBytes: 1 << 20,
+	}
+
 	// USB connection
 	c := &serial.Config{Name: usbPort, Baud: baudRate}
 	s, errOpenPort := serial.OpenPort(c)
@@ -96,20 +135,29 @@ func main() {
 	}
 
 	// Infinite loop to read USB, parse and handle the data
-	for {
-		n, errRead := s.Read(buf)
-		if errRead != nil {
-			// In case of error, just print the error and continue reading without handling any data
-			log.WithError(errRead).Error("error when reading on USB")
-			continue
+	go func() {
+		for {
+			n, errRead := s.Read(buf)
+			if errRead != nil {
+				// In case of error, just print the error and continue reading without handling any data
+				log.WithError(errRead).Error("error when reading on USB")
+				continue
+			}
+			log.WithField("buf[:n]", fmt.Sprintf("%s", buf[:n])).Debug("buffer read")
+
+			stringList = append(stringList, parseBuffer(buf[:n], []string{})...)
+			log.WithField("stringList", stringList).Debug("buffer parsed")
+
+			stringList = handleStringList(stringList)
+			log.WithField("stringList", stringList).Debug("buffer strings handled")
 		}
-		log.WithField("buf[:n]", fmt.Sprintf("%s", buf[:n])).Debug("buffer read")
+	}()
 
-		stringList = append(stringList, parseBuffer(buf[:n], []string{})...)
-		log.WithField("stringList", stringList).Debug("buffer parsed")
+	// Start HTTP server
+	log.WithField("address", httpServer.Addr).Info("HTTP server running")
 
-		stringList = handleStringList(stringList)
-		log.WithField("stringList", stringList).Debug("buffer strings handled")
+	if err := httpServer.ListenAndServe(); err != nil {
+		log.WithError(err).Error("error while running ListenAndServe")
 	}
 }
 
