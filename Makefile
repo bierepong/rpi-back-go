@@ -10,4 +10,4 @@ go-build:
 	$(GO) build -ldflags "-X main.Version=$(VERSION)"
 
 go-build-arm:
-	GOOS=linux GOARCH=arm GOARM=7 $(GO) build -ldflags "-X main.Version=$(VERSION)"
+	CC=arm-linux-gnueabihf-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm GOARM=7 $(GO) build -ldflags "-X main.Version=$(VERSION)"
