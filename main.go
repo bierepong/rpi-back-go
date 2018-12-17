@@ -243,7 +243,7 @@ func handleFunctionExpression(functionString string) {
 
 	// Get function information
 	functionName := functionComposition[1]
-	functionArgs := strings.Split(functionComposition[2], ", ")
+	functionArgs := strings.Split(functionComposition[2], ",")
 
 	// Act differently following the function name
 	switch functionName {
