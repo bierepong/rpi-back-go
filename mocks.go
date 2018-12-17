@@ -76,10 +76,18 @@ func handleMocks(buf []byte, stringList []string) {
 
 func dbTest() {
 	for _, user := range dbUsernamesMock {
-		username, errInsertUser := getDbClient().insertUser(user)
-		if errInsertUser != nil {
-			log.WithError(errInsertUser).Error("error on user insertion")
+		userExists, errUserExists := getDbClient().userExists(user)
+		if errUserExists != nil {
+			log.WithError(errUserExists).Error("error on user existence")
+			return
 		}
-		log.WithField("username", username).Info("user insertion")
+
+		if !userExists {
+			username, errInsertUser := getDbClient().insertUser(user)
+			if errInsertUser != nil {
+				log.WithError(errInsertUser).Error("error on user insertion")
+			}
+			log.WithField("username", username).Info("user insertion")
+		}
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -65,6 +66,39 @@ func (db *GameDB) insertUser(username string) (string, error) {
 	}
 
 	return username, nil
+}
+
+func (db *GameDB) userExists(username string) (bool, error) {
+	stmt, errPrepare := db.Prepare("select count(username) from game_data where username=?")
+	if errPrepare != nil {
+		return false, errPrepare
+	}
+	defer closeStatement(stmt)
+
+	rows, errQuery := stmt.Query(username)
+	if errQuery != nil {
+		return false, errQuery
+	}
+
+	for rows.Next() {
+		var count int
+		if err := rows.Scan(&count); err != nil {
+			return false, err
+		}
+
+		switch {
+		case count == 0:
+			return false, nil
+		case count == 1:
+			return true, nil
+		case count > 1:
+			return false, fmt.Errorf("more than one result found")
+		default:
+			return false, fmt.Errorf("unknown error")
+		}
+	}
+
+	return false, fmt.Errorf("unknown error")
 }
 
 func (db *GameDB) close() {

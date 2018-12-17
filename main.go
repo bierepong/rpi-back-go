@@ -104,13 +104,6 @@ func main() {
 	buf := make([]byte, 128)
 	var stringList []string
 
-	// Handle mock mode
-	if mock {
-		dbTest()
-		handleMocks(buf, stringList)
-		return
-	}
-
 	// Init Web server/API
 	router := gin.Default()
 	router.Use(static.Serve("/", static.LocalFile(publicHtml, true)))
@@ -139,31 +132,37 @@ func main() {
 		MaxHeaderBytes: 1 << 20,
 	}
 
-	// USB connection
-	c := &serial.Config{Name: usbPort, Baud: baudRate}
-	s, errOpenPort := serial.OpenPort(c)
-	if errOpenPort != nil {
-		log.WithError(errOpenPort).Fatal("error when opening USB connection")
-	}
-
-	// Infinite loop to read USB, parse and handle the data
-	go func() {
-		for {
-			n, errRead := s.Read(buf)
-			if errRead != nil {
-				// In case of error, just print the error and continue reading without handling any data
-				log.WithError(errRead).Error("error when reading on USB")
-				continue
-			}
-			log.WithField("buf[:n]", fmt.Sprintf("%s", buf[:n])).Debug("buffer read")
-
-			stringList = append(stringList, parseBuffer(buf[:n], []string{})...)
-			log.WithField("stringList", stringList).Debug("buffer parsed")
-
-			stringList = handleStringList(stringList)
-			log.WithField("stringList", stringList).Debug("buffer strings handled")
+	if !mock {
+		// USB connection
+		c := &serial.Config{Name: usbPort, Baud: baudRate}
+		s, errOpenPort := serial.OpenPort(c)
+		if errOpenPort != nil {
+			log.WithError(errOpenPort).Fatal("error when opening USB connection")
 		}
-	}()
+
+		// Infinite loop to read USB, parse and handle the data
+		go func() {
+			for {
+				n, errRead := s.Read(buf)
+				if errRead != nil {
+					// In case of error, just print the error and continue reading without handling any data
+					log.WithError(errRead).Error("error when reading on USB")
+					continue
+				}
+				log.WithField("buf[:n]", fmt.Sprintf("%s", buf[:n])).Debug("buffer read")
+
+				stringList = append(stringList, parseBuffer(buf[:n], []string{})...)
+				log.WithField("stringList", stringList).Debug("buffer parsed")
+
+				stringList = handleStringList(stringList)
+				log.WithField("stringList", stringList).Debug("buffer strings handled")
+			}
+		}()
+	} else {
+		// Handle mock mode
+		dbTest()
+		handleMocks(buf, stringList)
+	}
 
 	// Start HTTP server
 	log.WithField("address", httpServer.Addr).Info("HTTP server running")
