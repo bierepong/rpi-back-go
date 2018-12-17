@@ -119,6 +119,18 @@ func main() {
 		ctx.JSON(http.StatusOK, gin.H{"version": version})
 	})
 
+	router.GET("/status", func(ctx *gin.Context) {
+		ctx.JSON(http.StatusOK, globalCurrentSensorValues)
+	})
+
+	router.POST("/begin", func(ctx *gin.Context) {
+		ctx.JSON(http.StatusOK, gin.H{"status": "begin"})
+	})
+
+	router.POST("/end", func(ctx *gin.Context) {
+		ctx.JSON(http.StatusOK, gin.H{"status": "end", "result": globalCurrentSensorValues})
+	})
+
 	httpServer := &http.Server{
 		Addr:           ":" + listenPort,
 		Handler:        router,
