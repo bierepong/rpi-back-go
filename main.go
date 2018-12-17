@@ -75,7 +75,7 @@ func main() {
 	// Test database connection
 	getDbClient()
 	// Close on exit
-	defer getDbClient().Close()
+	defer getDbClient().close()
 
 	// Init buffer data variables
 	buf := make([]byte, 128)
