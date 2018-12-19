@@ -17,9 +17,19 @@ import (
 
 var version string
 
+type GameData struct {
+	Username string `json:"username"`
+	Status   []bool `json:"status"`
+}
+
+// TODO: refactor these global variables to use a game class to store game status and parameters
+
 // globalCurrentSensorValues contains the latest sensor values
 // it is set by the sensor function, and read by the GET /status call
 var globalCurrentSensorValues []int
+
+// gameInProgress stores the game status (if it is in progress or not)
+var gameInProgress = false
 
 func main() {
 	// Init logs
@@ -113,14 +123,87 @@ func main() {
 	})
 
 	router.GET("/status", func(ctx *gin.Context) {
-		ctx.JSON(http.StatusOK, globalCurrentSensorValues)
+		ctx.JSON(http.StatusOK, gin.H{"status": globalCurrentSensorValues})
 	})
 
 	router.POST("/begin", func(ctx *gin.Context) {
+		var gameDataJson GameData
+		if err := ctx.ShouldBindJSON(&gameDataJson); err != nil {
+			log.WithError(err).Error("error on JSON binding")
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		userExists, errUserExists := getDbClient().userExists(gameDataJson.Username)
+		if errUserExists != nil {
+			log.WithError(errUserExists).Error("error on user existence")
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": errUserExists.Error()})
+			return
+		}
+
+		if !userExists {
+			username, score, errInsertUser := getDbClient().insertUser(gameDataJson.Username, 0)
+			if errInsertUser != nil {
+				log.WithError(errInsertUser).Error("error on user insertion")
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": errInsertUser.Error()})
+				return
+			}
+			log.WithFields(log.Fields{
+				"username": username,
+				"score":    score,
+			}).Info("user insertion")
+		}
+
+		gameInProgress = true
 		ctx.JSON(http.StatusOK, gin.H{"status": "begin"})
 	})
 
 	router.POST("/end", func(ctx *gin.Context) {
+		var gameDataJson GameData
+		if err := ctx.ShouldBindJSON(&gameDataJson); err != nil {
+			log.WithError(err).Error("error on JSON binding")
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		if !gameInProgress {
+			log.WithField("gameInProgress", gameInProgress).Error("the game is not started")
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "the game is not started"})
+			return
+		}
+
+		userExists, errUserExists := getDbClient().userExists(gameDataJson.Username)
+		if errUserExists != nil {
+			log.WithError(errUserExists).Error("error on user existence")
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": errUserExists.Error()})
+			return
+		}
+
+		if !userExists {
+			log.WithField("gameDataJson.Username", gameDataJson.Username).Error("this user does not exist")
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "this user does not exist"})
+			return
+		}
+
+		score := 0
+		for _, ballPresent := range gameDataJson.Status {
+			if ballPresent {
+				score++
+			}
+		}
+
+		username, score, errUpdateUser := getDbClient().updateUser(gameDataJson.Username, score)
+		if errUpdateUser != nil {
+			log.WithError(errUpdateUser).Error("error on user update")
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "error on user update"})
+			return
+		}
+		log.WithFields(log.Fields{
+			"username": username,
+			"score":    score,
+		}).Info("user update")
+
+		gameInProgress = false
 		ctx.JSON(http.StatusOK, gin.H{"status": "end", "result": globalCurrentSensorValues})
 	})
 
