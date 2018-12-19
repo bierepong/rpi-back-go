@@ -18,8 +18,12 @@ import (
 var version string
 
 type GameData struct {
-	Username string `json:"username"`
-	Status   []bool `json:"status"`
+	Username string     `json:"username"`
+	Status   StatusData `json:"status"`
+}
+
+type StatusData struct {
+	Status []bool `json:"status"`
 }
 
 // TODO: refactor these global variables to use a game class to store game status and parameters
@@ -186,7 +190,7 @@ func main() {
 		}
 
 		score := 0
-		for _, ballPresent := range gameDataJson.Status {
+		for _, ballPresent := range gameDataJson.Status.Status {
 			if ballPresent {
 				score++
 			}
