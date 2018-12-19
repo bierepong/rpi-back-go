@@ -83,11 +83,14 @@ func dbTest() {
 		}
 
 		if !userExists {
-			username, errInsertUser := getDbClient().insertUser(user)
+			username, score, errInsertUser := getDbClient().insertUser(user, 0)
 			if errInsertUser != nil {
 				log.WithError(errInsertUser).Error("error on user insertion")
 			}
-			log.WithField("username", username).Info("user insertion")
+			log.WithFields(log.Fields{
+				"username": username,
+				"score":    score,
+			}).Info("user insertion")
 		}
 	}
 }

@@ -37,7 +37,7 @@ func getDbClient() *GameDB {
 		}
 		db = &GameDB{vanillaDB}
 
-		_, errExec := db.Exec("create table game_data (username text not null primary key);")
+		_, errExec := db.Exec("create table game_data (username text not null primary key, score integer not null);")
 		if errExec != nil {
 			log.WithError(errExec).Fatal("error on create table init")
 		}
@@ -53,19 +53,19 @@ func getDbClient() *GameDB {
 	return dbInstance
 }
 
-func (db *GameDB) insertUser(username string) (string, error) {
-	stmt, errPrepare := db.Prepare("insert into game_data(username) values(?)")
+func (db *GameDB) insertUser(username string, score int) (string, int, error) {
+	stmt, errPrepare := db.Prepare("insert into game_data(username, score) values(?, ?)")
 	if errPrepare != nil {
-		return "", errPrepare
+		return "", 0, errPrepare
 	}
 	defer closeStatement(stmt)
 
-	_, errExec := stmt.Exec(username)
+	_, errExec := stmt.Exec(username, score)
 	if errExec != nil {
-		return "", errExec
+		return "", 0, errExec
 	}
 
-	return username, nil
+	return username, score, nil
 }
 
 func (db *GameDB) userExists(username string) (bool, error) {
@@ -79,6 +79,7 @@ func (db *GameDB) userExists(username string) (bool, error) {
 	if errQuery != nil {
 		return false, errQuery
 	}
+	defer closeRows(rows)
 
 	for rows.Next() {
 		var count int
@@ -110,5 +111,11 @@ func (db *GameDB) close() {
 func closeStatement(stmt *sql.Stmt) {
 	if err := stmt.Close(); err != nil {
 		log.WithError(err).Error("error when closing statement")
+	}
+}
+
+func closeRows(rows *sql.Rows) {
+	if err := rows.Close(); err != nil {
+		log.WithError(err).Error("error when closing rows")
 	}
 }
