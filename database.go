@@ -68,6 +68,21 @@ func (db *GameDB) insertUser(username string, score int) (string, int, error) {
 	return username, score, nil
 }
 
+func (db *GameDB) updateUser(username string, score int) (string, int, error) {
+	stmt, errPrepare := db.Prepare("update game_data set score=? where username=?")
+	if errPrepare != nil {
+		return "", 0, errPrepare
+	}
+	defer closeStatement(stmt)
+
+	_, errExec := stmt.Exec(score, username)
+	if errExec != nil {
+		return "", 0, errExec
+	}
+
+	return username, score, nil
+}
+
 func (db *GameDB) userExists(username string) (bool, error) {
 	stmt, errPrepare := db.Prepare("select count(username) from game_data where username=?")
 	if errPrepare != nil {

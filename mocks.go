@@ -75,7 +75,7 @@ func handleMocks(buf []byte, stringList []string) {
 }
 
 func dbTest() {
-	for _, user := range dbUsernamesMock {
+	for index, user := range dbUsernamesMock {
 		userExists, errUserExists := getDbClient().userExists(user)
 		if errUserExists != nil {
 			log.WithError(errUserExists).Error("error on user existence")
@@ -91,6 +91,16 @@ func dbTest() {
 				"username": username,
 				"score":    score,
 			}).Info("user insertion")
+		} else {
+			// Update the user and use the index as a score value
+			username, score, errUpdateUser := getDbClient().updateUser(user, index)
+			if errUpdateUser != nil {
+				log.WithError(errUpdateUser).Error("error on user update")
+			}
+			log.WithFields(log.Fields{
+				"username": username,
+				"score":    score,
+			}).Info("user update")
 		}
 	}
 }
