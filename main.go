@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/gin-contrib/static"
 	"github.com/gin-gonic/gin"
+	"github.com/gobuffalo/envy"
 	log "github.com/sirupsen/logrus"
 	"github.com/tarm/serial"
 )
@@ -37,10 +37,7 @@ var gameInProgress = false
 
 func main() {
 	// Init logs
-	logLevelRaw := os.Getenv("BEERPONG_LOG_LEVEL")
-	if logLevelRaw == "" {
-		logLevelRaw = "info"
-	}
+	logLevelRaw := envy.Get("BEERPONG_LOG_LEVEL", "info")
 
 	logLevel, errParseLevel := log.ParseLevel(logLevelRaw)
 	if errParseLevel != nil {
@@ -52,32 +49,14 @@ func main() {
 	log.WithField("version", version).Info("program version")
 
 	// Get config raw
-	usbPort := os.Getenv("BEERPONG_USB_PORT")
-	baudRateRaw := os.Getenv("BEERPONG_BAUD_RATE")
-	publicHtml := os.Getenv("BEERPONG_PUBLIC_HTML")
-	mockRaw := os.Getenv("BEERPONG_MOCK")
-	productionRaw := os.Getenv("BEERPONG_PRODUCTION")
-	listenPort := os.Getenv("BEERPONG_LISTEN_PORT")
-
-	// Get default values
-	if usbPort == "" {
-		usbPort = "/dev/ttyACM0"
-	}
-	if baudRateRaw == "" {
-		baudRateRaw = "115200"
-	}
-	if publicHtml == "" {
-		publicHtml = "../rpi-front/dist"
-	}
-	if mockRaw == "" {
-		mockRaw = "false"
-	}
-	if productionRaw == "" {
-		productionRaw = "false"
-	}
-	if listenPort == "" {
-		listenPort = "8080"
-	}
+	usbPort := envy.Get("BEERPONG_USB_PORT", "/dev/ttyACM0")
+	baudRateRaw := envy.Get("BEERPONG_BAUD_RATE", "115200")
+	publicHtml := envy.Get("BEERPONG_PUBLIC_HTML", "../rpi-front/dist")
+	mockRaw := envy.Get("BEERPONG_MOCK", "false")
+	productionRaw := envy.Get("BEERPONG_PRODUCTION", "false")
+	listenAddr := envy.Get("BEERPONG_LISTEN_ADDR", "localhost")
+	listenPort := envy.Get("BEERPONG_LISTEN_PORT", "8080")
+	dbPath := envy.Get("BEERPONG_DB_PATH", "test.db")
 
 	// Parse raw values
 	baudRate, errAtoi := strconv.Atoi(baudRateRaw)
@@ -109,10 +88,11 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
-	// Test database connection
-	getDbClient()
-	// Close on exit
-	defer getDbClient().close()
+	db, err := Open(dbPath)
+	if err != nil {
+		log.WithError(err).Fatal("Fail to load database")
+	}
+	defer db.Close()
 
 	// Init buffer data variables
 	buf := make([]byte, 128)
@@ -138,7 +118,7 @@ func main() {
 			return
 		}
 
-		userExists, errUserExists := getDbClient().userExists(gameDataJson.Username)
+		userExists, errUserExists := db.Exists(gameDataJson.Username)
 		if errUserExists != nil {
 			log.WithError(errUserExists).Error("error on user existence")
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": errUserExists.Error()})
@@ -146,7 +126,7 @@ func main() {
 		}
 
 		if !userExists {
-			username, score, errInsertUser := getDbClient().insertUser(gameDataJson.Username, 0)
+			username, score, errInsertUser := db.Insert(gameDataJson.Username, 0)
 			if errInsertUser != nil {
 				log.WithError(errInsertUser).Error("error on user insertion")
 				ctx.JSON(http.StatusInternalServerError, gin.H{"error": errInsertUser.Error()})
@@ -176,7 +156,7 @@ func main() {
 			return
 		}
 
-		userExists, errUserExists := getDbClient().userExists(gameDataJson.Username)
+		userExists, errUserExists := db.Exists(gameDataJson.Username)
 		if errUserExists != nil {
 			log.WithError(errUserExists).Error("error on user existence")
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": errUserExists.Error()})
@@ -196,7 +176,7 @@ func main() {
 			}
 		}
 
-		username, score, errUpdateUser := getDbClient().updateUser(gameDataJson.Username, score)
+		username, score, errUpdateUser := db.Update(gameDataJson.Username, score)
 		if errUpdateUser != nil {
 			log.WithError(errUpdateUser).Error("error on user update")
 			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "error on user update"})
@@ -212,7 +192,7 @@ func main() {
 	})
 
 	httpServer := &http.Server{
-		Addr:           ":" + listenPort,
+		Addr:           fmt.Sprintf("%s:%s", listenAddr, listenPort),
 		Handler:        router,
 		ReadTimeout:    30 * time.Second,
 		WriteTimeout:   30 * time.Second,
@@ -247,7 +227,7 @@ func main() {
 		}()
 	} else {
 		// Handle mock mode
-		dbTest()
+		dbTest(db)
 		handleMocks(buf, stringList)
 	}
 
