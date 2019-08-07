@@ -1,4 +1,5 @@
 /.env*
 !/.env.sample
 /test_db.sqlite
+test.db
 /rpi-back-go

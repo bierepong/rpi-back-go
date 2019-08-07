@@ -74,16 +74,16 @@ func handleMocks(buf []byte, stringList []string) {
 	log.WithField("globalCurrentSensorValues", globalCurrentSensorValues).Info("last mock value")
 }
 
-func dbTest() {
+func dbTest(db Database) {
 	for index, user := range dbUsernamesMock {
-		userExists, errUserExists := getDbClient().userExists(user)
+		userExists, errUserExists := db.Exists(user)
 		if errUserExists != nil {
 			log.WithError(errUserExists).Error("error on user existence")
 			return
 		}
 
 		if !userExists {
-			username, score, errInsertUser := getDbClient().insertUser(user, 0)
+			username, score, errInsertUser := db.Insert(user, 0)
 			if errInsertUser != nil {
 				log.WithError(errInsertUser).Error("error on user insertion")
 			}
@@ -93,7 +93,7 @@ func dbTest() {
 			}).Info("user insertion")
 		} else {
 			// Update the user and use the index as a score value
-			username, score, errUpdateUser := getDbClient().updateUser(user, index)
+			username, score, errUpdateUser := db.Update(user, index)
 			if errUpdateUser != nil {
 				log.WithError(errUpdateUser).Error("error on user update")
 			}

@@ -1,136 +1,73 @@
 package main
 
 import (
-	"database/sql"
-	"fmt"
-	"os"
-
-	_ "github.com/mattn/go-sqlite3"
-	log "github.com/sirupsen/logrus"
+	"github.com/asdine/storm"
+	"github.com/asdine/storm/codec/json"
+	"github.com/gofrs/uuid"
+	"github.com/pkg/errors"
 )
 
-type GameDB struct {
-	*sql.DB
+type (
+	// A Database defines all the methods used to interact with the database.
+	Database interface {
+		// Close the database.
+		Close() error
+		// Exists checks if the user already exists.
+		Exists(username string) (bool, error)
+		// Insert a user in database.
+		Insert(username string, score int) (string, int, error)
+		// Update the given user's score.
+		Update(username string, score int) (string, int, error)
+	}
+
+	// A User represents a database record.
+	User struct {
+		ID    string `json:"id"    storm:"id"`
+		Name  string `json:"name"  storm:"unique"`
+		Score int    `json:"score"`
+	}
+
+	database struct {
+		db *storm.DB
+	}
+)
+
+// Open returns a new database connection.
+func Open(dbname string) (Database, error) {
+	db, err := storm.Open(dbname, storm.Codec(json.Codec))
+	if err != nil {
+		return nil, errors.Wrap(err, "could not get database connection")
+	}
+
+	return &database{
+		db: db,
+	}, nil
 }
 
-var dbInstance *GameDB
-
-func getDbClient() *GameDB {
-	var db *GameDB
-
-	if dbInstance != nil {
-		return dbInstance
-	}
-
-	dbPath := os.Getenv("BEERPONG_DB_PATH")
-	// Get default value
-	if dbPath == "" {
-		dbPath = "./test_db.sqlite"
-	}
-
-	log.WithField("dbPath", dbPath).Info("database selected")
-
-	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		vanillaDB, errOpen := sql.Open("sqlite3", dbPath)
-		if errOpen != nil {
-			log.WithError(errOpen).Fatal("error when opening database")
-		}
-		db = &GameDB{vanillaDB}
-
-		_, errExec := db.Exec("create table game_data (username text not null primary key, score integer not null);")
-		if errExec != nil {
-			log.WithError(errExec).Fatal("error on create table init")
-		}
-	} else {
-		vanillaDB, errOpen := sql.Open("sqlite3", dbPath)
-		if errOpen != nil {
-			log.WithError(errOpen).Fatal("error when opening database")
-		}
-		db = &GameDB{vanillaDB}
-	}
-
-	dbInstance = db
-	return dbInstance
+func (o *database) Close() error {
+	return o.db.Close()
 }
 
-func (db *GameDB) insertUser(username string, score int) (string, int, error) {
-	stmt, errPrepare := db.Prepare("insert into game_data(username, score) values(?, ?)")
-	if errPrepare != nil {
-		return "", 0, errPrepare
-	}
-	defer closeStatement(stmt)
-
-	_, errExec := stmt.Exec(username, score)
-	if errExec != nil {
-		return "", 0, errExec
-	}
-
-	return username, score, nil
+func (o *database) Exists(username string) (bool, error) {
+	n, err := o.db.Count(&User{Name: username}) // Name has uniqueness constraint.
+	return n == 1, errors.Wrap(err, "could not check if username exists")
 }
 
-func (db *GameDB) updateUser(username string, score int) (string, int, error) {
-	stmt, errPrepare := db.Prepare("update game_data set score=? where username=?")
-	if errPrepare != nil {
-		return "", 0, errPrepare
+func (o *database) Insert(username string, score int) (string, int, error) {
+	user := &User{
+		ID:    uuid.Must(uuid.NewV4()).String(),
+		Name:  username,
+		Score: score,
 	}
-	defer closeStatement(stmt)
-
-	_, errExec := stmt.Exec(score, username)
-	if errExec != nil {
-		return "", 0, errExec
-	}
-
-	return username, score, nil
+	return username, score, errors.Wrap(o.db.Save(user), "could not insert user")
 }
 
-func (db *GameDB) userExists(username string) (bool, error) {
-	stmt, errPrepare := db.Prepare("select count(username) from game_data where username=?")
-	if errPrepare != nil {
-		return false, errPrepare
-	}
-	defer closeStatement(stmt)
-
-	rows, errQuery := stmt.Query(username)
-	if errQuery != nil {
-		return false, errQuery
-	}
-	defer closeRows(rows)
-
-	for rows.Next() {
-		var count int
-		if err := rows.Scan(&count); err != nil {
-			return false, err
-		}
-
-		switch {
-		case count == 0:
-			return false, nil
-		case count == 1:
-			return true, nil
-		case count > 1:
-			return false, fmt.Errorf("more than one result found")
-		default:
-			return false, fmt.Errorf("unknown error")
-		}
+func (o *database) Update(username string, score int) (string, int, error) {
+	var user User
+	if err := o.db.One("Name", username, &user); err != nil {
+		return username, score, errors.Wrap(err, "update user score")
 	}
 
-	return false, fmt.Errorf("unknown error")
-}
-
-func (db *GameDB) close() {
-	if err := db.Close(); err != nil {
-		log.WithError(err).Error("error when closing database")
-	}
-}
-
-func closeStatement(stmt *sql.Stmt) {
-	if err := stmt.Close(); err != nil {
-		log.WithError(err).Error("error when closing statement")
-	}
-}
-
-func closeRows(rows *sql.Rows) {
-	if err := rows.Close(); err != nil {
-		log.WithError(err).Error("error when closing rows")
-	}
+	user.Score = score
+	return username, score, errors.Wrap(o.db.Update(&user), "could not insert user")
 }
